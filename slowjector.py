@@ -2,6 +2,7 @@
 # coding: utf-8
 import cv2
 import sys
+import signal
 import time
 from threading import Thread
 from Queue import Queue
@@ -24,12 +25,11 @@ NOISE_CUTOFF = 12
 
 fake_count = 0
 def displayProc(framequeue):
-  #window_name = "delta view"
-  #cv2.namedWindow(window_name, cv2.CV_WINDOW_AUTOSIZE)
-  window_name_now = "now view"
-  cv2.namedWindow(window_name_now, cv2.WINDOW_NORMAL)
-  print 'Display process starting...'
+  print 'Display process started.'
+  window_name = "now view"
+  cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
   while True:
+    time.sleep(0.001) # Small amount of sleeping for thread-switching
     thing = framequeue.get()
     if thing is None:
       break
@@ -38,8 +38,9 @@ def displayProc(framequeue):
       while not framequeue.empty():
         framequeue.get()
     fake_count = delta_count
-    cv2.imshow(window_name_now, image)
-    cv2.waitKey(10)
+    cv2.imshow(window_name, image)
+
+  cv2.destroyWindow(window_name)
   print 'Display process done.'
 
 
@@ -61,8 +62,15 @@ def main():
   framequeue = Queue()
   t = Thread(target=displayProc, args=(framequeue,))
   t.start()
+  # Quit via c-C
+  def signal_handler(signal, frame):
+    framequeue.put(None)
+    t.join()
+    sys.exit(0)
+  signal.signal(signal.SIGINT, signal_handler)
+
   while True:
-    time.sleep(0.010)
+    time.sleep(0.001) # Small amount of sleeping for thread-switching
     frame_delta = cv2.absdiff(frame_prior, frame_now)
     frame_delta = cv2.threshold(frame_delta, NOISE_CUTOFF, 255, 3)[1]
     delta_count = cv2.countNonZero(frame_delta)
@@ -94,18 +102,7 @@ def main():
     frame_now = cam.read()[1]
     frame_now = cv2.cvtColor(frame_now, cv2.COLOR_RGB2GRAY)
     frame_now = cv2.blur(frame_now, (BLUR_SIZE, BLUR_SIZE))
-    # Wait up to 10ms for a key press. Quit if the key is either ESC or 'q'.
-    key = cv2.waitKey(10)
-    if key != -1:
-      print key
-
-    if key == 'q':
-      cv2.destroyWindow(window_name_now)
-      break
-  print 'done'
-  framequeue.put(None)
-  p.join()
-  cv.DestroyAllWindows()
+  print 'Read thread done.'
 
 if __name__ == '__main__':
   main()
