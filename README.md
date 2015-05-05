@@ -1,4 +1,6 @@
 # slowjector
+![](./slowjector.gif "The Author, Shirtless.")
+
 The code behind an art project created for [Steer Roast
 2015](http://web.mit.edu/senior-house/www/steerroast.html). A webcam and
 projector were set up in an empty room and visitors could interact with
