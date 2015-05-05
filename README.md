@@ -33,10 +33,10 @@ $ python slowjector.py
 
 ### Modification
 If you read the code, you'll see that there are various different flags and
-variables, all of which can be used to change the way slowjector works. At some
-point in the future I'll include some oducmentation, but feel free to play
-around with them.
+variables, all of which can be used to change the way the video is processed
+and displayed. At some point in the future I'll include some oducmentation, but
+feel free to play around with them.
 
 
 ### License
-Read the LICENSE file.
+Read the LICENSE file!
