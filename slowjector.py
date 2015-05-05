@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
+# Based on http://noah.org/wiki/movement.py
+# TODO(peter): restore license
 import cv2
 import sys
 import signal
@@ -23,25 +25,37 @@ NOISE_CUTOFF = 12
 # second. Even 4 FPS is fine.
 #FRAMES_PER_SECOND = 10
 
-fake_count = 0
-def displayProc(framequeue):
-  print 'Display process started.'
-  window_name = "now view"
-  cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+QUICK_CATCHUP_TO_REALITY = True
+
+def displayThread(framequeue):
+  # Open a window in which to display the images
+  display_window_name = "now view"
+  cv2.namedWindow(display_window_name, cv2.CV_WINDOW_AUTOSIZE)
+  last_frame_delta = 0
   while True:
     time.sleep(0.001) # Small amount of sleeping for thread-switching
-    thing = framequeue.get()
-    if thing is None:
+    data = framequeue.get()
+    # Source thread will put None if it receives c-C; if this happens, exit the
+    # loop and shut off the display.
+    if data is None:
       break
-    delta_count, image = thing
-    if delta_count == 0 and fake_count == 1:
+    # Otherwise, it puts a tuple (frame_delta, image)
+    frame_delta, image = data
+
+    # Draw the image
+    cv2.imshow(display_window_name, image)
+
+    # Optionally, catch up to the live feed after seeing some motion stop by
+    # popping all images off of the queue.
+    if (QUICK_CATCHUP_TO_REALITY and
+        frame_delta <= 100 and last_frame_delta >= 100):
       while not framequeue.empty():
         framequeue.get()
-    fake_count = delta_count
-    cv2.imshow(window_name, image)
 
-  cv2.destroyWindow(window_name)
-  print 'Display process done.'
+    last_frame_delta = frame_delta
+
+  # Clean up by closing the window used to display images.
+  cv2.destroyWindow(display_window_name)
 
 
 def main():
@@ -60,7 +74,7 @@ def main():
 
   delta_count_last = 1
   framequeue = Queue()
-  t = Thread(target=displayProc, args=(framequeue,))
+  t = Thread(target=displayThread, args=(framequeue,))
   t.start()
   # Quit via c-C
   def signal_handler(signal, frame):
@@ -95,7 +109,7 @@ def main():
     for i in xrange(duplicates):
       framequeue.put((delta_count_last, dst))
 
-    delta_count_last = max(delta_count - 4000, 0)
+    delta_count_last = max(delta_count - 5000, 0)
 
     # Advance the frames.
     frame_prior = frame_now
