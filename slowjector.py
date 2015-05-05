@@ -5,6 +5,7 @@
 import cv2
 import sys
 import signal
+import traceback
 import time
 from threading import Thread
 from Queue import Queue
@@ -20,19 +21,18 @@ from Queue import Queue
 # useless outdoors.
 BLUR_SIZE = 3
 NOISE_CUTOFF = 12
-# Ah, but the third main parameter that affects movement detection
-# sensitivity is the time between frames. I like about 10 frames per
-# second. Even 4 FPS is fine.
-#FRAMES_PER_SECOND = 10
 
 QUICK_CATCHUP_TO_REALITY = True
-SHOW_DELTA_TEXT = False
+SHOW_DELTA_TEXT = True
 MIRROR_SOURCE_IMAGE = True
+PROCESS_BLUR = True
+RAW_FRAME_OUTPUT = False
+INCLUDE_DELTA_IN_OUTPUT = True
 
 def displayThread(framequeue):
   # Open a window in which to display the images
-  display_window_name = "now view"
-  cv2.namedWindow(display_window_name, cv2.CV_WINDOW_AUTOSIZE)
+  display_window_name = "slowjector"
+  cv2.namedWindow(display_window_name, cv2.cv.CV_WINDOW_NORMAL)
   last_delta_count = 0
   while True:
     time.sleep(0.001) # Small amount of sleeping for thread-switching
@@ -59,6 +59,18 @@ def displayThread(framequeue):
   cv2.destroyWindow(display_window_name)
 
 
+def process_frame_for_comparison(raw_frame):
+  processed_frame = cv2.cvtColor(raw_frame, cv2.COLOR_RGB2GRAY)
+  if PROCESS_BLUR:
+    processed_frame = cv2.blur(processed_frame, (BLUR_SIZE, BLUR_SIZE))
+  return processed_frame
+
+def compare_frames(previous_frame, current_frame):
+  frame_delta = cv2.absdiff(previous_frame, current_frame)
+  _, frame_delta = cv2.threshold(frame_delta, NOISE_CUTOFF, 255, 3)
+  delta_count = cv2.countNonZero(frame_delta)
+  return frame_delta, delta_count
+
 def slowjector(device_id=0,
                src_width=640,
                src_height=480,
@@ -70,63 +82,94 @@ def slowjector(device_id=0,
   total_pixels = src_width * src_height
   motion_threshold_pixels = int(motion_threshold_ratio * total_pixels)
 
-  # Stabilize the detector by letting the camera warm up and
-  # seeding the first frames.
-  current_frame = cam.read()[1]
-  current_frame = cam.read()[1]
-  current_frame = cv2.cvtColor(current_frame, cv2.COLOR_RGB2GRAY)
-  current_frame = cv2.blur(current_frame, (BLUR_SIZE, BLUR_SIZE))
-  previous_frame = current_frame
-
-  last_frame_delta = 1
+  # Set up the display thread that draws images on the screen.
   framequeue = Queue()
-  t = Thread(target=displayThread, args=(framequeue,))
-  t.start()
+  display_thread = Thread(target=displayThread, args=(framequeue,))
 
-  # Quit via c-C
-  def signal_handler(signal, frame):
-    framequeue.put(None)
-    t.join()
+  # Enable quitting via c-C.
+  def control_c(*_):
+    print ''
+    if display_thread.is_alive():
+      framequeue.put(None)  # Signals to the display thread to clean itself up.
+      display_thread.join() # Wait for the cleanup to happen.
     sys.exit(0)
-  signal.signal(signal.SIGINT, signal_handler)
 
-  while True:
-    time.sleep(0.001) # Small amount of sleeping for thread-switching
+  signal.signal(signal.SIGINT, control_c)
 
-    # Advance the frames.
-    current_frame = cam.read()[1]
-    current_frame = cv2.cvtColor(current_frame, cv2.COLOR_RGB2GRAY)
-    current_frame = cv2.blur(current_frame, (BLUR_SIZE, BLUR_SIZE))
-    frame_delta = cv2.absdiff(previous_frame, current_frame)
-    frame_delta = cv2.threshold(frame_delta, NOISE_CUTOFF, 255, 3)[1]
-    delta_count = cv2.countNonZero(frame_delta)
+  def source_loop():
+    # Set up variables used for comparing values against the previous frame.
+    last_frame_delta = 0
+    previous_frame = None
+    current_frame = None
 
-    # Visual detection statistics output.
-    # Normalize improves brightness and contrast.
-    # Mirror view makes self display more intuitive.
-    cv2.normalize(frame_delta, frame_delta, 0, 255, cv2.NORM_MINMAX)
-    if MIRROR_SOURCE_IMAGE:
-      frame_delta = cv2.flip(frame_delta, 1)
-      processed_image = cv2.flip(current_frame, 1)
-    else:
-      processed_image = current_frame
+    # Stabilize the detector by letting the camera warm up and seeding the first
+    # frame.
+    while previous_frame is None:
+      previous_frame = current_frame
+      _, raw_frame = cam.read()
+      current_frame = process_frame_for_comparison(raw_frame)
 
-    processed_image = cv2.addWeighted(processed_image, 1.0, frame_delta, 0.9, 0)
-    if SHOW_DELTA_TEXT:
-      cv2.putText(processed_image, "DELTA: %d" % (delta_count),
-          (5, 15), cv2.FONT_HERSHEY_PLAIN, 0.8, (255, 255, 255))
+    # Start the external display thread
+    display_thread.start()
+    while True:
+      time.sleep(0.001) # Small amount of sleeping for thread-switching
 
-    # Add frame to queue, more times if there's more motion.
-    if delta_count < motion_threshold_pixels:
-      frame_count = 1
-    else:
-      frame_count = min(delta_count / motion_threshold_pixels,
-                        max_slowmo_frames)
-    for i in xrange(frame_count):
-      framequeue.put((delta_count, processed_image))
+      # Advance the frames.
+      _, raw_frame = cam.read()
+      current_frame = process_frame_for_comparison(raw_frame)
+      frame_delta, delta_count = compare_frames(previous_frame, current_frame)
 
-    last_frame_delta = delta_count
-    previous_frame = current_frame
+      # Visual detection statistics output.
+      # Normalize improves brightness and contrast.
+      # Mirror view makes self display more intuitive.
+      cv2.normalize(frame_delta, frame_delta, 0, 255, cv2.NORM_MINMAX)
+
+      output_image = current_frame
+      if RAW_FRAME_OUTPUT:
+        output_image = raw_frame
+
+      if MIRROR_SOURCE_IMAGE:
+        frame_delta = cv2.flip(frame_delta, 1)
+        output_image = cv2.flip(output_image, 1)
+
+      if INCLUDE_DELTA_IN_OUTPUT:
+        if RAW_FRAME_OUTPUT:
+          matched_frame_delta = cv2.cvtColor(frame_delta, cv2.COLOR_GRAY2RGB)
+        else:
+          matched_frame_delta = frame_delta
+        output_image = cv2.addWeighted(
+            output_image, 1.0, matched_frame_delta, 0.9, 0)
+
+      if SHOW_DELTA_TEXT:
+        cv2.putText(
+            output_image,
+            "DELTA: %.2f%% (%d/%d)" % (float(delta_count) / total_pixels * 100,
+                                       delta_count,
+                                       total_pixels),
+            (5, 15),
+            cv2.FONT_HERSHEY_PLAIN,
+            0.8,
+            (255, 255, 255))
+
+      # Add frame to queue, more times if there's more motion.
+      if delta_count < motion_threshold_pixels:
+        frame_count = 1
+      else:
+        frame_count = min(delta_count / motion_threshold_pixels,
+                          max_slowmo_frames)
+      for i in xrange(frame_count):
+        framequeue.put((delta_count, output_image))
+
+      last_frame_delta = delta_count
+      previous_frame = current_frame
+
+  # Run the source loop in a wrapper that cleans up if an exception occurs.
+  try:
+    source_loop()
+  except Exception as exception:
+    traceback.print_exc(exception)
+    control_c()
+
 
 if __name__ == '__main__':
   slowjector()
