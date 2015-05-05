@@ -26,8 +26,8 @@ QUICK_CATCHUP_TO_REALITY = True
 SHOW_DELTA_TEXT = True
 MIRROR_SOURCE_IMAGE = True
 PROCESS_BLUR = True
-RAW_FRAME_OUTPUT = False
-INCLUDE_DELTA_IN_OUTPUT = True
+RAW_FRAME_OUTPUT = True
+INCLUDE_DELTA_IN_OUTPUT = False
 
 def displayThread(framequeue):
   # Open a window in which to display the images
@@ -74,13 +74,15 @@ def compare_frames(previous_frame, current_frame):
 def slowjector(device_id=0,
                src_width=640,
                src_height=480,
-               motion_threshold_ratio=0.01,
+               motion_threshold_ratio=0.02,
+               motion_unit_ratio=0.01,
                max_slowmo_frames=24):
   cam = cv2.VideoCapture(device_id)
   cam.set(cv2.cv.CV_CAP_PROP_FRAME_WIDTH, src_width)
   cam.set(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT, src_height)
   total_pixels = src_width * src_height
   motion_threshold_pixels = int(motion_threshold_ratio * total_pixels)
+  motion_unit_pixels = int(motion_unit_ratio * total_pixels)
 
   # Set up the display thread that draws images on the screen.
   framequeue = Queue()
@@ -155,7 +157,7 @@ def slowjector(device_id=0,
       if delta_count < motion_threshold_pixels:
         frame_count = 1
       else:
-        frame_count = min(delta_count / motion_threshold_pixels,
+        frame_count = min(delta_count / motion_unit_pixels,
                           max_slowmo_frames)
       for i in xrange(frame_count):
         framequeue.put((delta_count, output_image))
