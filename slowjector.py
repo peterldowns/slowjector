@@ -10,11 +10,13 @@ from Queue import Queue
 
 
 QUICK_CATCHUP_TO_REALITY = True
+QUICK_CATCHUP_DELTA_LIMIT = 100
 SHOW_DELTA_TEXT = True
 MIRROR_SOURCE_IMAGE = True
 PROCESS_BLUR = True
-RAW_FRAME_OUTPUT = True
-INCLUDE_DELTA_IN_OUTPUT = False
+RAW_FRAME_OUTPUT = False
+INCLUDE_DELTA_IN_OUTPUT = True
+
 
 # From Noah's movement.py code:
 #   The two main parameters that affect movement detection sensitivity are
@@ -61,11 +63,16 @@ def displayThread(framequeue):
     # Optionally, catch up to the live feed after seeing some motion stop by
     # popping all images off of the queue.
     if (QUICK_CATCHUP_TO_REALITY and
-        # TODO(peter): 100 -> variable
-        delta_count <= 100 and last_delta_count >= 100):
+        delta_count <= QUICK_CATCHUP_DELTA_LIMIT and
+        last_delta_count > QUICK_CATCHUP_DELTA_LIMIT):
+      print 'catching up...'
+      num_frames_skipped = 0
       while not framequeue.empty():
         framequeue.get()
+        num_frames_skipped += 1
+      print 'skipped %d frames' % num_frames_skipped
     last_delta_count = delta_count
+
   # Clean up by closing the window used to display images.
   cv2.destroyWindow(display_window_name)
 
@@ -73,9 +80,9 @@ def displayThread(framequeue):
 def slowjector(device_id=0,
                src_width=640,
                src_height=480,
-               motion_threshold_ratio=0.02,
+               motion_threshold_ratio=0.06,
                motion_unit_ratio=0.01,
-               max_slowmo_frames=24):
+               max_slowmo_frames=16):
   cam = cv2.VideoCapture(device_id)
   cam.set(cv2.cv.CV_CAP_PROP_FRAME_WIDTH, src_width)
   cam.set(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT, src_height)
@@ -153,7 +160,7 @@ def slowjector(device_id=0,
             (255, 255, 255))
 
       # Add frame to queue, more times if there's more motion.
-      if delta_count < motion_threshold_pixels:
+      if delta_count <= motion_threshold_pixels:
         frame_count = 1
       else:
         frame_count = min(delta_count / motion_unit_pixels,
