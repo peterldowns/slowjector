@@ -63,7 +63,7 @@ def slowjector(device_id=0,
                src_width=640,
                src_height=480,
                motion_threshold_ratio=0.01,
-               max_slowmo_frames=16):
+               max_slowmo_frames=24):
   cam = cv2.VideoCapture(device_id)
   cam.set(cv2.cv.CV_CAP_PROP_FRAME_WIDTH, src_width)
   cam.set(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT, src_height)
