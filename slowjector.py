@@ -1,26 +1,13 @@
 #!/usr/bin/env python
 # coding: utf-8
-# Based on http://noah.org/wiki/movement.py
-# TODO(peter): restore license
 import cv2
-import sys
 import signal
-import traceback
+import sys
 import time
+import traceback
 from threading import Thread
 from Queue import Queue
 
-# The two main parameters that affect movement detection sensitivity
-# are BLUR_SIZE and NOISE_CUTOFF. Both have little direct effect on
-# CPU usage. In theory a smaller BLUR_SIZE should use less CPU, but
-# for the range of values that are effective the difference is
-# negligible. The default values are effective with on most light
-# conditions with the cameras I have tested. At these levels the
-# detectory can easily trigger on eye blinks, yet not trigger if the
-# subject remains still without blinking. These levels will likely be
-# useless outdoors.
-BLUR_SIZE = 3
-NOISE_CUTOFF = 12
 
 QUICK_CATCHUP_TO_REALITY = True
 SHOW_DELTA_TEXT = True
@@ -28,6 +15,30 @@ MIRROR_SOURCE_IMAGE = True
 PROCESS_BLUR = True
 RAW_FRAME_OUTPUT = True
 INCLUDE_DELTA_IN_OUTPUT = False
+
+# From Noah's movement.py code:
+#   The two main parameters that affect movement detection sensitivity are
+#   BLUR_SIZE and NOISE_CUTOFF. Both have little direct effect on CPU usage. In
+#   theory a smaller BLUR_SIZE should use less CPU, but for the range of values
+#   that are effective the difference is negligible. The default values are
+#   effective with on most light conditions with the cameras I have tested. At
+#   these levels the detectory can easily trigger on eye blinks, yet not
+#   trigger if the subject remains still without blinking. These levels will
+#   likely be useless outdoors.
+BLUR_SIZE = 3
+NOISE_CUTOFF = 12
+
+def process_frame_for_comparison(raw_frame):
+  processed_frame = cv2.cvtColor(raw_frame, cv2.COLOR_RGB2GRAY)
+  if PROCESS_BLUR:
+    processed_frame = cv2.blur(processed_frame, (BLUR_SIZE, BLUR_SIZE))
+  return processed_frame
+
+def compare_frames(previous_frame, current_frame):
+  frame_delta = cv2.absdiff(previous_frame, current_frame)
+  _, frame_delta = cv2.threshold(frame_delta, NOISE_CUTOFF, 255, 3)
+  delta_count = cv2.countNonZero(frame_delta)
+  return frame_delta, delta_count
 
 def displayThread(framequeue):
   # Open a window in which to display the images
@@ -58,18 +69,6 @@ def displayThread(framequeue):
   # Clean up by closing the window used to display images.
   cv2.destroyWindow(display_window_name)
 
-
-def process_frame_for_comparison(raw_frame):
-  processed_frame = cv2.cvtColor(raw_frame, cv2.COLOR_RGB2GRAY)
-  if PROCESS_BLUR:
-    processed_frame = cv2.blur(processed_frame, (BLUR_SIZE, BLUR_SIZE))
-  return processed_frame
-
-def compare_frames(previous_frame, current_frame):
-  frame_delta = cv2.absdiff(previous_frame, current_frame)
-  _, frame_delta = cv2.threshold(frame_delta, NOISE_CUTOFF, 255, 3)
-  delta_count = cv2.countNonZero(frame_delta)
-  return frame_delta, delta_count
 
 def slowjector(device_id=0,
                src_width=640,
