@@ -1,20 +1,20 @@
 #!/usr/bin/env python
 # coding: utf-8
-import cv2
 import signal
 import sys
 import time
 import traceback
-from threading import Thread
 from Queue import Queue
+from threading import Thread
+
+import click
+import cv2
 
 
-QUICK_CATCHUP_TO_REALITY = True
-QUICK_CATCHUP_DELTA_LIMIT = 100
 SHOW_DELTA_TEXT = True
 MIRROR_SOURCE_IMAGE = True
 PROCESS_BLUR = True
-RAW_FRAME_OUTPUT = False
+RAW_FRAME_OUTPUT = True
 INCLUDE_DELTA_IN_OUTPUT = True
 
 
@@ -30,80 +30,111 @@ INCLUDE_DELTA_IN_OUTPUT = True
 BLUR_SIZE = 3
 NOISE_CUTOFF = 12
 
-def process_frame_for_comparison(raw_frame):
-  processed_frame = cv2.cvtColor(raw_frame, cv2.COLOR_RGB2GRAY)
-  if PROCESS_BLUR:
-    processed_frame = cv2.blur(processed_frame, (BLUR_SIZE, BLUR_SIZE))
-  return processed_frame
+@click.command()
+@click.option('--device-id', default=0, help='Video device number.')
+@click.option('--src-width', default=640, help='Video source width (pixels).')
+@click.option('--src-height', default=480, help='Video source height (pixels).')
+@click.option(
+    '--motion-threshold-ratio',
+    default=0.005,
+    help=('Ratio of pixels necessary to be changed in order for motion to'
+          ' start dilating time. Increasing this number increases the amount of'
+          ' motion necessary to trigger the slow motion effect.'))
+@click.option(
+    '--motion-unit-ratio',
+    default=0.005,
+    help=('Ratio of pixels changed used to calculate amount of slow motion.'
+          ' Increasing this number decreases the amount of "slow motion" that'
+          ' takes place due to movement.'))
+@click.option(
+    '--max-frame-count',
+    default=24,
+    help=('The maximum number of times any given frame will be repeated as'
+          ' part of the slow motion effect. Increasing this number can lead to'
+          ' visual "lag" during use, as frames with a lot of motion may be'
+          ' shown for a larger amount of time'))
+@click.option(
+    '--quick-catchup/--slow-catchup',
+    default=True,
+    help=('Quick catchup will "snap" back to reality after a motion sequence'
+          ' finishes. Slow catchup will attempt to display frames as fast as'
+          ' possible in order to catch up to reality, which may take some time.'
+          ' The biggest difference is that slow catchup will play every source'
+          ' frame captured, while quick catchup will jump over some to catch'
+          ' up faster.'))
+@click.option(
+    '--quick-catchup/--slow-catchup',
+    default=True,
+    help=('Quick catchup will "snap" back to reality after a motion sequence'
+          ' finishes. Slow catchup will attempt to display frames as fast as'
+          ' possible in order to catch up to reality, which may take some time.'
+          ' The biggest difference is that slow catchup will play every source'
+          ' frame captured, while quick catchup will jump over some to catch'
+          ' up faster.'))
+@click.option(
+    '--quick-catchup-ratio',
+    default=0.002,
+    help=('The threshold ratio of pixels to be changed in a given frame. When'
+          ' a given sequence of slow-motion frames includes a frame that has'
+          ' fewer pixel changes (as a ratio) than this number, the slow motion'
+          ' will end and the output will "catch up" to reality.'))
+def slowjector(
+    device_id,
+    src_width,
+    src_height,
+    motion_threshold_ratio,
+    motion_unit_ratio,
+    max_frame_count,
+    quick_catchup,
+    quick_catchup_ratio):
 
-def compare_frames(previous_frame, current_frame):
-  frame_delta = cv2.absdiff(previous_frame, current_frame)
-  _, frame_delta = cv2.threshold(frame_delta, NOISE_CUTOFF, 255, 3)
-  delta_count = cv2.countNonZero(frame_delta)
-  return frame_delta, delta_count
-
-def displayThread(framequeue):
-  # Open a window in which to display the images
-  display_window_name = "slowjector"
-  cv2.namedWindow(display_window_name, cv2.cv.CV_WINDOW_NORMAL)
-  last_delta_count = 0
-  while True:
-    time.sleep(0.001) # Small amount of sleeping for thread-switching
-    data = framequeue.get()
-    # Source thread will put None if it receives c-C; if this happens, exit the
-    # loop and shut off the display.
-    if data is None:
-      break
-    # Otherwise, it puts a tuple (delta_count, image)
-    delta_count, image = data
-
-    # Draw the image
-    cv2.imshow(display_window_name, image)
-
-    # Optionally, catch up to the live feed after seeing some motion stop by
-    # popping all images off of the queue.
-    if (QUICK_CATCHUP_TO_REALITY and
-        delta_count <= QUICK_CATCHUP_DELTA_LIMIT and
-        last_delta_count > QUICK_CATCHUP_DELTA_LIMIT):
-      print 'catching up...'
-      num_frames_skipped = 0
-      while not framequeue.empty():
-        framequeue.get()
-        num_frames_skipped += 1
-      print 'skipped %d frames' % num_frames_skipped
-    last_delta_count = delta_count
-
-  # Clean up by closing the window used to display images.
-  cv2.destroyWindow(display_window_name)
-
-
-def slowjector(device_id=0,
-               src_width=640,
-               src_height=480,
-               motion_threshold_ratio=0.06,
-               motion_unit_ratio=0.01,
-               max_slowmo_frames=16):
-  cam = cv2.VideoCapture(device_id)
-  cam.set(cv2.cv.CV_CAP_PROP_FRAME_WIDTH, src_width)
-  cam.set(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT, src_height)
   total_pixels = src_width * src_height
   motion_threshold_pixels = int(motion_threshold_ratio * total_pixels)
   motion_unit_pixels = int(motion_unit_ratio * total_pixels)
+  quick_catchup_pixels = int(quick_catchup_ratio * total_pixels)
+
+  cam = cv2.VideoCapture(device_id)
+  cam.set(cv2.cv.CV_CAP_PROP_FRAME_WIDTH, src_width)
+  cam.set(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT, src_height)
+
+  def displayThread(framequeue):
+    # Open a window in which to display the images
+    display_window_name = "slowjector"
+    cv2.namedWindow(display_window_name, cv2.cv.CV_WINDOW_NORMAL)
+    last_delta_count = 0
+    while True:
+      time.sleep(0.001) # Small amount of sleeping for thread-switching
+      data = framequeue.get()
+      # Source thread will put None if it receives c-C; if this happens, exit the
+      # loop and shut off the display.
+      if data is None:
+        break
+      # Otherwise, it puts a tuple (delta_count, image)
+      delta_count, image = data
+
+      # Draw the image
+      cv2.imshow(display_window_name, image)
+
+      # Optionally, catch up to the live feed after seeing some motion stop by
+      # popping all images off of the queue.
+      if (quick_catchup and
+          delta_count <= quick_catchup_ratio and
+          last_delta_count > quick_catchup_ratio):
+        num_frames_skipped = 0
+        while not framequeue.empty():
+          framequeue.get()
+          num_frames_skipped += 1
+      last_delta_count = delta_count
+
+    # Clean up by closing the window used to display images.
+    cv2.destroyWindow(display_window_name)
 
   # Set up the display thread that draws images on the screen.
   framequeue = Queue()
   display_thread = Thread(target=displayThread, args=(framequeue,))
 
-  # Enable quitting via c-C.
-  def control_c(*_):
-    print ''
-    if display_thread.is_alive():
-      framequeue.put(None)  # Signals to the display thread to clean itself up.
-      display_thread.join() # Wait for the cleanup to happen.
-    sys.exit(0)
-
-  signal.signal(signal.SIGINT, control_c)
-
+  # Run the source loop in a wrapper that cleans up if an exception occurs.
+  @control_c_protected(control_c_handler(framequeue, display_thread))
   def source_loop():
     # Set up variables used for comparing values against the previous frame.
     last_frame_delta = 0
@@ -164,19 +195,51 @@ def slowjector(device_id=0,
         frame_count = 1
       else:
         frame_count = min(delta_count / motion_unit_pixels,
-                          max_slowmo_frames)
+                          max_frame_count)
       for i in xrange(frame_count):
         framequeue.put((delta_count, output_image))
 
       last_frame_delta = delta_count
       previous_frame = current_frame
 
-  # Run the source loop in a wrapper that cleans up if an exception occurs.
-  try:
-    source_loop()
-  except Exception as exception:
-    traceback.print_exc(exception)
-    control_c()
+  return source_loop()
+
+
+def control_c_handler(queue, thread):
+  def handler(*_):
+    print ''
+    if thread.is_alive():
+      queue.put(None)
+      thread.join()
+    sys.exit(0)
+  return handler
+
+def control_c_protected(handler):
+  def decorator(fn):
+    def wrapper(*args, **kwargs):
+      # Run the source loop in a wrapper that cleans up if an exception occurs.
+      signal.signal(signal.SIGINT, handler)
+      try:
+        fn(*args, **kwargs)
+      except Exception as exception:
+        traceback.print_exc(exception)
+        handler()
+    return wrapper
+  return decorator
+
+
+def process_frame_for_comparison(raw_frame):
+  processed_frame = cv2.cvtColor(raw_frame, cv2.COLOR_RGB2GRAY)
+  if PROCESS_BLUR:
+    processed_frame = cv2.blur(processed_frame, (BLUR_SIZE, BLUR_SIZE))
+  return processed_frame
+
+
+def compare_frames(previous_frame, current_frame):
+  frame_delta = cv2.absdiff(previous_frame, current_frame)
+  _, frame_delta = cv2.threshold(frame_delta, NOISE_CUTOFF, 255, 3)
+  delta_count = cv2.countNonZero(frame_delta)
+  return frame_delta, delta_count
 
 
 if __name__ == '__main__':
