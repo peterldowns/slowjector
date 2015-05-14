@@ -20,7 +20,6 @@ First, clone the repository:
 $ git clone https://github.com/peterldowns/slowjector.git
 ```
 
-#### Requirements
 `slowjector` depends on [OpenCV](http://opencv.org/) and has been tested with
 Python 2.7. If you'd like to use the command line interface wrapper, you can
 install its requirements easily with
@@ -31,13 +30,15 @@ $ cd slowjector
 $ pip install -r requirements.txt
 ```
 
-### CLI
-If you just want to see some cool video, use the CLI (make sure you installed
+If you just want to slowject some video, use the CLI (make sure you installed
 its requirements, detailed above):
 
 ```bash
 $ ./slowjector_cli.py
 ```
+
+Everything's python, though, so feel free to import from slowjector and use its
+functions in your own code.
 
 ### Modification
 If you read the code, you'll see that there are various different flags and
@@ -48,6 +49,9 @@ feel free to play around with them. The CLI provides a nice overview:
 ```bash
 $ ./slowjector_slowjector_cli.py --help
 ```
+
+Pull requests are very, very welcome!
+
 
 ### License
 MIT, check the LICENSE file for more information.
