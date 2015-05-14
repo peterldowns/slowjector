@@ -13,32 +13,41 @@ to [Noah](http://noah.org) for the [movement calculation
 code](http://noah.org/wiki/movement.py).
 
 
-### Installation
-`slowjector` only depends on [OpenCV](http://opencv.org/) and has been tested
-with Python 2.7. You must also have a webcam.
-
-
 ### Usage
-Once you've installed the dependencies, clone the repository:
+First, clone the repository:
 
 ```bash
 $ git clone https://github.com/peterldowns/slowjector.git
 ```
 
-and run the code:
+#### Requirements
+`slowjector` depends on [OpenCV](http://opencv.org/) and has been tested with
+Python 2.7. If you'd like to use the command line interface wrapper, you can
+install its requirements easily with
+[`pip`](https://pip.pypa.io/en/stable/installing.html):
 
 ```bash
 $ cd slowjector
-$ python slowjector.py
+$ pip install -r requirements.txt
 ```
 
+### CLI
+If you just want to see some cool video, use the CLI (make sure you installed
+its requirements, detailed above):
+
+```bash
+$ ./slowjector_cli.py
+```
 
 ### Modification
 If you read the code, you'll see that there are various different flags and
 variables, all of which can be used to change the way the video is processed
 and displayed. At some point in the future I'll include some oducmentation, but
-feel free to play around with them.
+feel free to play around with them. The CLI provides a nice overview:
 
+```bash
+$ ./slowjector_slowjector_cli.py --help
+```
 
 ### License
-Read the LICENSE file!
+MIT, check the LICENSE file for more information.
