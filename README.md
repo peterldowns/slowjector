@@ -47,7 +47,7 @@ and displayed. At some point in the future I'll include some oducmentation, but
 feel free to play around with them. The CLI provides a nice overview:
 
 ```bash
-$ ./slowjector_slowjector_cli.py --help
+$ ./slowjector_cli.py --help
 ```
 
 Pull requests are very, very welcome!
