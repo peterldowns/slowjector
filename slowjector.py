@@ -2,6 +2,7 @@
 from Queue import Queue
 from threading import Thread
 from time import sleep
+from collections import deque
 
 import click
 import cv2
@@ -64,7 +65,7 @@ def display_loop(framequeue, quick_catchup, quick_catchup_pixels):
   display_window_name = "slowjector"
   cv2.namedWindow(display_window_name, cv2.cv.CV_WINDOW_NORMAL)
   last_delta_count = 0
-  listq = []
+  listq = deque()
   while True:
     sleep(0.001) # Small amount of sleeping for thread-switching
     data = framequeue.get()
@@ -73,8 +74,9 @@ def display_loop(framequeue, quick_catchup, quick_catchup_pixels):
     if data is None:
       break
 
+    # Frames are pushed onto a queue (FIFO)
     listq.append(data)
-    data = listq.pop(0)
+    data = listq.popleft()
 
     # Otherwise, it puts a tuple (delta_count, image)
     delta_count, image = data
@@ -87,7 +89,7 @@ def display_loop(framequeue, quick_catchup, quick_catchup_pixels):
     if (quick_catchup and
         delta_count <= quick_catchup_pixels and
         last_delta_count > quick_catchup_pixels):
-      listqueue = []
+      listq.clear()
     last_delta_count = delta_count
 
   # Clean up by closing the window used to display images.

@@ -35,6 +35,16 @@ its requirements, detailed above):
 
 ```bash
 $ ./slowjector_cli.py
+$ ./slowjector_cli.py --help # Show available flags
+
+# Good demo parameters for being standing ~2 meters away
+$ ./slowjector_cli.py \
+--quick-catchup \
+--mirror-src \
+--show-delta-text \
+--dubious-commitment \
+--raw-output \
+--quick-catchup-ratio 0.05
 ```
 
 Everything's python, though, so feel free to import from slowjector and use its
