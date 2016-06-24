@@ -36,17 +36,8 @@ from slowjector import slowjector
           ' frame captured, while quick catchup will jump over some to catch'
           ' up faster.'))
 @click.option(
-    '--quick-catchup/--slow-catchup',
-    default=True,
-    help=('Quick catchup will "snap" back to reality after a motion sequence'
-          ' finishes. Slow catchup will attempt to display frames as fast as'
-          ' possible in order to catch up to reality, which may take some time.'
-          ' The biggest difference is that slow catchup will play every source'
-          ' frame captured, while quick catchup will jump over some to catch'
-          ' up faster.'))
-@click.option(
     '--quick-catchup-ratio',
-    default=0.002,
+    default=0.004,
     help=('The threshold ratio of pixels to be changed in a given frame. When'
           ' a given sequence of slow-motion frames includes a frame that has'
           ' fewer pixel changes (as a ratio) than this number, the slow motion'
